@@ -60,7 +60,7 @@ export const gameAPI = {
   makeBotMove: (gameId, move) => api.post(`/game/${gameId}/move-bot`, { move }),
   getMyGames: () => api.get('/game/my-games'),
   getActiveGames: () => api.get('/game/active'),
-  resignGame: (gameId) => api.post(`/game/${gameId}/resign`),
+  resignGame: (gameId, socketId = null) => api.post(`/game/${gameId}/resign`, { socketId }),
   abortGame: (gameId) => api.post(`/game/${gameId}/abort`),  
 };
 

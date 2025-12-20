@@ -191,6 +191,12 @@ const socketHandler = (io) => {
       }
     });
 
+    socket.on('game:resign', ({ gameId }) => {
+      console.log(`🏳️ ${socket.username} resigned from game ${gameId}`);
+      // The actual resignation logic is in gameController.js
+      // This is just for socket-side awareness
+    });
+
     // ============================================
     // CHAT EVENTS
     // ============================================

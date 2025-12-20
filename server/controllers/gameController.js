@@ -687,6 +687,7 @@ exports.abortGame = async (req, res) => {
 // @access  Private
 exports.resignGame = async (req, res) => {
   try {
+    const { socketId } = req.body;
     const game = await Game.findById(req.params.id)
       .populate('players.white players.black', 'username rating');
 
@@ -726,6 +727,7 @@ exports.resignGame = async (req, res) => {
 
     const userColor = game.players.white._id.toString() === req.user.id ? 'white' : 'black';
     const winnerId = userColor === 'white' ? game.players.black._id : game.players.white._id;
+    const winnerUsername = userColor === 'white' ? game.players.black.username : game.players.white.username;
 
     game.status = 'completed';
     game.result = userColor === 'white' ? '0-1' : '1-0';
@@ -757,6 +759,38 @@ exports.resignGame = async (req, res) => {
     });
 
     await game.save();
+
+    // =============================================
+    // 🆕 SOCKET.IO BROADCAST - NOTIFY OPPONENT
+    // ============================================
+    const io = req.app.get('io');
+    if (io) {
+      const resignationData = {
+        gameId: game._id,
+        resignedPlayer: userColor,
+        resignedUsername: req.user.username,
+        winner: userColor === 'white' ? 'black' : 'white',
+        winnerUsername: winnerUsername,
+        message: `${req.user.username} has resigned. ${winnerUsername} wins!`,
+        game: {
+          status: game.status,
+          result: game.result,
+          winner: game.winner,
+          endedAt: game.endedAt
+        }
+      };
+
+      if (socketId) {
+        // ✅ METHOD 1: Exclude specific socket (BEST)
+        io.to(game._id.toString()).except(socketId).emit('game:player-resigned', resignationData);
+        console.log(`📢 Resignation broadcast to game ${game._id} - EXCLUDING socket ${socketId}`);
+      } else {
+        // ⚠️ FALLBACK: Send to all (if socket ID not provided)
+        // This happens if user's socket disconnected before resigning
+        io.to(game._id.toString()).emit('game:player-resigned', resignationData);
+        console.log(`📢 Resignation broadcast to game ${game._id} - ALL clients (no socket ID)`);
+      }
+    }
 
     res.status(200).json({
       success: true,

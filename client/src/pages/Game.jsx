@@ -76,6 +76,39 @@ const GameOverModal = ({ show, winner, reason, onClose }) => {
   );
 };
 
+const ResignationToast = ({ show, resignedPlayer, onComplete }) => {
+  useEffect(() => {
+    if (show) {
+      // Auto-dismiss after 2 seconds
+      const timer = setTimeout(() => {
+        onComplete();
+      }, 2000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [show, onComplete]);
+
+  if (!show) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center pointer-events-none">
+      <div className="animate-in zoom-in-50 duration-500">
+        <div className="bg-gradient-to-r from-yellow-500/20 to-green-500/20 border-4 border-green-500 rounded-2xl p-8 shadow-2xl backdrop-blur-md">
+          <div className="text-center space-y-3">
+            <div className="text-7xl animate-bounce">🏳️</div>
+            <div className="text-3xl font-bold text-green-500">
+              {resignedPlayer} Resigned!
+            </div>
+            <div className="text-xl text-[hsl(var(--color-foreground))]">
+              Victory is yours! 🎉
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Game = () => {
   const { gameId } = useParams();
   const navigate = useNavigate();
@@ -97,6 +130,9 @@ const Game = () => {
     winner: '',
     reason: ''
   });
+
+  const [showResignationToast, setShowResignationToast] = useState(false);
+  const [resignedPlayerName, setResignedPlayerName] = useState('');
 
   // ============================================
   // 🎯 UNIFIED GAME OVER HANDLER
@@ -230,6 +266,75 @@ const Game = () => {
         showGameOverModal(winner, data.message);
       });
 
+      socketService.getSocket().on('game:player-resigned', (data) => {
+        console.log('🏳️ Player resigned:', data);
+
+        const myColor = getPlayerColor();
+  
+        // ============================================
+        // 🛡️ SAFETY CHECK: Ignore if I resigned
+        // ============================================
+        if (data.resignedPlayer === myColor) {
+          console.warn('⚠️ Received my own resignation event - ignoring (this should not happen)');
+          return; // Exit early - don't show modal
+        }
+        
+        // Update local game state immediately
+        setGame(prev => ({
+          ...prev,
+          status: 'completed',
+          result: data.game.result,
+          winner: data.game.winner,
+          endedAt: data.game.endedAt
+        }));
+
+        // Clear any timeout warnings
+        setTimeoutWarning(null);
+        setRemainingTime(null);
+
+        // ============================================
+        // DETERMINE WHO WON FROM CURRENT USER'S PERSPECTIVE
+        // ============================================
+    
+        let winner;
+        
+        // if (data.resignedPlayer === myColor) {
+        //   // I resigned (this shouldn't normally happen since I'd see my own modal)
+        //   winner = data.winnerUsername;
+        // } else {
+        //   // Opponent resigned - I WIN!
+        //   winner = 'You';
+        // }
+        // if (data.resignedPlayer !== myColor) {
+        //   setResignedPlayerName(data.resignedUsername);
+        //   setShowResignationToast(true);
+          
+        //   // Wait for toast animation, then show modal
+        //   setTimeout(() => {
+        //     setShowResignationToast(false);
+        //     showGameOverModal('You', `${data.resignedUsername} resigned. You win!`);
+        //   }, 2500);
+        // }
+        // // ============================================
+        // // SHOW GAME OVER MODAL IMMEDIATELY
+        // // ============================================
+        showGameOverModal(
+          winner,
+          `${data.resignedUsername} resigned. ${winner === 'You' ? 'You win!' : `${data.winnerUsername} wins!`}`
+        );
+
+        // Optional: Play victory sound
+        // new Audio('/sounds/victory.mp3').play().catch(() => {});
+
+        // Optional: Browser notification (if permission granted)
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Game Over!', {
+            body: `${data.resignedUsername} resigned. You win!`,
+            icon: '/chess-pawn.svg'
+          });
+        }
+      });
+
       socketService.getSocket().on('game:timeout-warning', (data) => {
         const myColor = getPlayerColor();
         if (data.currentPlayer === myColor) {
@@ -257,15 +362,20 @@ const Game = () => {
 
   // Cleanup timeout listeners
   useEffect(() => {
+    if (gameId && socketConnected) {
+      socketService.joinGame(gameId);
+      setupSocketListeners();
+    }
     return () => {
       const socket = socketService.getSocket();
       if (socket) {
         socket.off('game:timeout-warning');
         socket.off('game:timeout');
         socket.off('game:timeout-warning-cleared');
+        socket.off('game:player-resigned');
       }
     };
-  }, []);
+  }, [gameId, socketConnected]);
 
   // Countdown timer
   useEffect(() => {
@@ -457,7 +567,13 @@ const Game = () => {
     
     try {
       console.log('📤 Sending resign request...');
-      const response = await gameAPI.resignGame(gameId);
+      // 🆕 Get socket ID to send with request 
+      const socket = socketService.getSocket();
+      const socketId = socket?.id || null;
+      
+      console.log('🔌 Socket ID:', socketId);
+      
+      const response = await gameAPI.resignGame(gameId, socketId);
       console.log('✅ Resign response:', response.data);
       
       // Update local game state first
@@ -783,6 +899,12 @@ const Game = () => {
             )}
           </div>
         </div>
+
+        <ResignationToast 
+          show={showResignationToast}
+          resignedPlayer={resignedPlayerName}
+          onComplete={() => setShowResignationToast(false)}
+        />
 
         {/* ✅ GAME OVER MODAL */}
         <GameOverModal 
