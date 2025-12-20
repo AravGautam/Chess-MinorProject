@@ -1,5 +1,5 @@
 const express = require('express');
-const http = require('http'); // ADDED: Need HTTP server for Socket.IO
+const http = require('http');
 const { Server } = require('socket.io'); 
 const dotenv = require('dotenv');
 const cors = require('cors');

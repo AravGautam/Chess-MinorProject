@@ -8,6 +8,7 @@ class TimeoutService {
     this.checkInterval = null;
     this.WARNING_TIME = 60000; // 60 seconds
     this.TIMEOUT_DURATION = 90000; // 90 seconds (1.5 minutes)
+    this.EARLY_GAME_THRESHOLD = 2; // Moves threshold for early abandonment
   }
 
   /**
@@ -49,7 +50,6 @@ class TimeoutService {
       })
       .populate('players.white players.black', 'username rating');
 
-      //console.log(`⏰ Checking ${activeGames.length} active games for timeouts`);
       let warningsSent = 0;
       let gamesTimedOut = 0;
 
@@ -69,15 +69,18 @@ class TimeoutService {
           gamesTimedOut++;
         }
       }
+      
       if (warningsSent > 0 || gamesTimedOut > 0) {
-      console.log(`⏰ Timeout check complete: ${warningsSent} warnings, ${gamesTimedOut} timeouts`);
+        console.log(`⏰ Timeout check complete: ${warningsSent} warnings, ${gamesTimedOut} timeouts`);
       }
     } catch (error) {
       console.error('❌ Timeout check error:', error);
     }
   }
 
-  // Added this helper method to TimeoutService class
+  /**
+   * Clear warnings for a game (called after a move is made)
+   */
   clearWarningsForGame(gameId) {
     this.io.to(gameId.toString()).emit('game:timeout-warning-cleared');
     console.log(`✅ Timeout warnings cleared for game ${gameId}`);
@@ -112,14 +115,72 @@ class TimeoutService {
   }
 
   /**
-   * Handle game timeout - award win to opponent
+   * Handle game timeout
+   * ✅ NEW LOGIC: Early game (<2 moves) = Draw, No rating change
    */
   async handleTimeout(game) {
     try {
       const abandonedPlayer = game.currentTurn; // Player whose turn it is
       const winningPlayer = abandonedPlayer === 'white' ? 'black' : 'white';
 
-      console.log(`⏰ Game ${game._id} timed out - ${abandonedPlayer} abandoned`);
+      console.log(`⏰ Game ${game._id} timed out - ${abandonedPlayer} abandoned (${game.moves.length} moves)`);
+
+      // ============================================
+      // 🆕 EARLY GAME LOGIC: DRAW IF < 2 MOVES
+      // ============================================
+      if (game.moves.length < this.EARLY_GAME_THRESHOLD) {
+        console.log(`🤝 Early abandonment detected (${game.moves.length} moves). Ending game as DRAW with no rating change.`);
+
+        // Update game to completed with draw result
+        game.status = 'completed';
+        game.result = '1/2-1/2'; // Draw
+        game.winner = null;
+        game.abandonedBy = abandonedPlayer;
+        game.endedAt = new Date();
+
+        // ✅ NO RATING CHANGES - Just increment games played and draws
+        if (game.players.white) {
+          await User.findByIdAndUpdate(game.players.white._id, {
+            $inc: {
+              draws: 1,
+              gamesPlayed: 1
+            }
+          });
+        }
+
+        if (game.players.black) {
+          await User.findByIdAndUpdate(game.players.black._id, {
+            $inc: {
+              draws: 1,
+              gamesPlayed: 1
+            }
+          });
+        }
+
+        await game.save();
+
+        // Notify players via Socket.IO
+        this.io.to(game._id.toString()).emit('game:timeout', {
+          gameId: game._id,
+          abandonedPlayer,
+          winner: 'Draw', // Special value to indicate draw
+          message: `⏰ Game ended in a draw due to early abandonment. No rating changes.`,
+          game: {
+            status: game.status,
+            result: game.result,
+            winner: game.winner,
+            endedAt: game.endedAt
+          }
+        });
+
+        console.log(`✅ Game ${game._id} ended as DRAW (early abandonment)`);
+        return;
+      }
+
+      // ============================================
+      // 🎯 NORMAL TIMEOUT: AFTER 2+ MOVES
+      // ============================================
+      console.log(`⚔️ Normal timeout after ${game.moves.length} moves. ${abandonedPlayer} loses.`);
 
       // Determine winner and loser IDs
       const winnerId = game.players[winningPlayer]._id;

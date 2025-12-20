@@ -207,6 +207,12 @@ const Game = () => {
 
       socketService.getSocket().on('game:timeout', (data) => {
         console.log('⏰ Game timed out:', data);
+        // ✅ NEW: Check if this is an early abandonment draw
+        if (data.winner === 'Draw') {
+          console.log('🤝 Early abandonment - ending as draw');
+          showGameOverModal('Draw', data.message);
+          return; // Exit early
+        }
         
         const myColor = getPlayerColor();
         let winner;
