@@ -16,7 +16,7 @@ import { Trophy, Clock, Target, Flag, Bot, User, AlertCircle, AlertTriangle, XCi
 // ============================================
 // 🎯 ENHANCED GAME OVER MODAL
 // ============================================
-const GameOverModal = ({ show, winner, reason, onClose }) => {
+const GameOverModal = ({ show, winner, reason, onClose, onDismiss, gameStats }) => {
   if (!show) return null;
 
   const getModalStyle = () => {
@@ -26,7 +26,8 @@ const GameOverModal = ({ show, winner, reason, onClose }) => {
         title: 'Victory!',
         bgColor: 'bg-gradient-to-br from-yellow-500/20 to-green-500/20',
         borderColor: 'border-yellow-500',
-        textColor: 'text-yellow-500'
+        textColor: 'text-yellow-500',
+        accentColor: 'bg-yellow-500 hover:bg-yellow-600'
       };
     } else if (winner === 'Draw') {
       return {
@@ -34,7 +35,8 @@ const GameOverModal = ({ show, winner, reason, onClose }) => {
         title: 'Draw!',
         bgColor: 'bg-gradient-to-br from-blue-500/20 to-purple-500/20',
         borderColor: 'border-blue-500',
-        textColor: 'text-blue-500'
+        textColor: 'text-blue-500',
+        accentColor: 'bg-blue-500 hover:bg-blue-600'
       };
     } else {
       return {
@@ -42,7 +44,8 @@ const GameOverModal = ({ show, winner, reason, onClose }) => {
         title: 'Defeat',
         bgColor: 'bg-gradient-to-br from-red-500/20 to-pink-500/20',
         borderColor: 'border-red-500',
-        textColor: 'text-red-500'
+        textColor: 'text-red-500',
+        accentColor: 'bg-red-500 hover:bg-red-600'
       };
     }
   };
@@ -51,27 +54,76 @@ const GameOverModal = ({ show, winner, reason, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
-      <Card className={`max-w-md w-full mx-4 border-2 ${style.borderColor} ${style.bgColor}`}>
-        <CardHeader>
-          <CardTitle className="text-center text-4xl">
+      <div className={`max-w-md w-full mx-4 rounded-xl border-2 ${style.borderColor} ${style.bgColor} shadow-2xl`}>
+        {/* Header */}
+        <div className="p-6 border-b border-white/10">
+          <div className="text-center">
             <div className="mb-4 text-6xl animate-bounce">{style.emoji}</div>
-            <div className={style.textColor}>{style.title}</div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+            <h2 className={`text-4xl font-bold ${style.textColor}`}>
+              {style.title}
+            </h2>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-4">
           <div className="text-center space-y-2">
-            <p className="text-xl font-semibold text-[hsl(var(--color-foreground))]">
+            <p className="text-xl font-semibold text-white">
               {winner === 'Draw' ? 'Game ended in a draw' : `${winner} wins!`}
             </p>
-            <p className="text-sm text-[hsl(var(--color-muted-foreground))]">
+            <p className="text-sm text-gray-300">
               {reason}
             </p>
           </div>
-          <Button onClick={onClose} className="w-full" size="lg">
-            Return to Home
-          </Button>
-        </CardContent>
-      </Card>
+
+          {/* 🆕 Game Stats (Optional) */}
+          {gameStats && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white/5 rounded-lg p-3 border border-white/10 text-center">
+                <div className="text-2xl font-bold text-white">{gameStats.moves || 0}</div>
+                <div className="text-xs text-gray-400">Moves</div>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3 border border-white/10 text-center">
+                <div className="text-2xl font-bold text-white">{gameStats.duration || '--'}</div>
+                <div className="text-xs text-gray-400">Duration</div>
+              </div>
+            </div>
+          )}
+
+          {/* Info Box */}
+          <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+            <p className="text-xs text-gray-400 text-center">
+              💡 You can review the game board or return to the home page
+            </p>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="p-6 pt-0 space-y-3">
+          {/* Primary Button - Return Home */}
+          <button
+            onClick={onClose}
+            className={`w-full ${style.accentColor} text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95 shadow-lg`}
+          >
+            🏠 Return to Home
+          </button>
+
+          {/* Secondary Button - Dismiss (View Game) */}
+          <button
+            onClick={onDismiss}
+            className="w-full bg-white/10 hover:bg-white/20 text-white font-medium py-3 px-4 rounded-lg border border-white/20 transition-all duration-200 hover:scale-105 active:scale-95"
+          >
+            👁️ Dismiss & Review Game
+          </button>
+        </div>
+
+        {/* Footer Hint */}
+        <div className="px-6 pb-4 text-center">
+          <p className="text-xs text-gray-500">
+            Press <kbd className="px-2 py-1 rounded bg-white/10">ESC</kbd> to dismiss
+          </p>
+        </div>
+      </div>
     </div>
   );
 };
@@ -109,7 +161,54 @@ const ResignationToast = ({ show, resignedPlayer, onComplete }) => {
   );
 };
 
-const Game = () => {
+// ============================================
+// 🛠️ UTILITY FUNCTIONS
+// ============================================
+/**
+ * Format game duration in human-readable format
+ * @param {Date|string} startedAt - Game start time
+ * @param {Date|string} endedAt - Game end time
+ * @returns {string} - Formatted duration (e.g., "5m 32s")
+ */
+const formatDuration = (startedAt, endedAt) => {
+  if (!startedAt || !endedAt) return '--';
+  
+  const start = new Date(startedAt);
+  const end = new Date(endedAt);
+  const diffMs = end - start;
+  
+  if (diffMs < 0) return '--';
+  
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const minutes = Math.floor(diffSeconds / 60);
+  const seconds = diffSeconds % 60;
+  
+  if (minutes === 0) {
+    return `${seconds}s`;
+  } else if (minutes < 60) {
+    return `${minutes}m ${seconds}s`;
+  } else {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return `${hours}h ${remainingMinutes}m`;
+  }
+};
+
+/**
+ * Get game statistics for modal display
+ * @param {Object} game - Game object
+ * @returns {Object} - Stats object
+ */
+const getGameStats = (game) => {
+  if (!game) return null;
+  
+  return {
+    moves: game.moves?.length || 0,
+    duration: formatDuration(game.startedAt, game.endedAt)
+  };
+};
+
+const Game = () => { 
   const { gameId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -133,6 +232,60 @@ const Game = () => {
 
   const [showResignationToast, setShowResignationToast] = useState(false);
   const [resignedPlayerName, setResignedPlayerName] = useState('');
+  const [hasReviewedGame, setHasReviewedGame] = useState(false);
+
+  // ============================================
+  // 🆕 HANDLE DISMISS - Hide modal but stay on page
+  // ============================================
+  const handleDismissModal = () => {
+    setGameOverModal({
+      show: false,
+      winner: '',
+      reason: ''
+    });
+    setHasReviewedGame(true);
+  };
+
+  // ============================================
+  // ✅ HANDLE CLOSE - Navigate to home
+  // ============================================
+  const handleCloseModal = () => {
+    // if (!hasReviewedGame && game?.status === 'completed') {
+    //   const confirmed = window.confirm(
+    //     '❓ Leave without reviewing the game?\n\n' +
+    //     'You can dismiss this modal to see the final board position.'
+    //   );
+    //   if (!confirmed) return;
+    // }
+    navigate('/');
+  };
+
+  // ALSO PREVENT BROWSER BACK BUTTON
+  useEffect(() => {
+    if (game?.status === 'completed' && !hasReviewedGame) {
+      const handleBeforeUnload = (e) => {
+        e.preventDefault();
+        e.returnValue = ''; // Chrome requires returnValue to be set
+      };
+
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }
+  }, [game?.status, hasReviewedGame]);
+
+  // ============================================
+  // 🆕 KEYBOARD SHORTCUT - ESC to dismiss
+  // ============================================
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && gameOverModal.show) {
+        handleDismissModal();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [gameOverModal.show]);
 
   // ============================================
   // 🎯 UNIFIED GAME OVER HANDLER
@@ -911,7 +1064,9 @@ const Game = () => {
           show={gameOverModal.show}
           winner={gameOverModal.winner}
           reason={gameOverModal.reason}
-          onClose={() => navigate('/')}
+          onClose={handleCloseModal}  // Navigate to home
+          onDismiss={handleDismissModal}  // Just hide modal
+          gameStats={getGameStats(game)}
         />
       </div>
     </div>
