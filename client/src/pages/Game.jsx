@@ -222,6 +222,7 @@ const Game = () => {
   const [botThinking, setBotThinking] = useState(false);
   const [timeoutWarning, setTimeoutWarning] = useState(null);
   const [remainingTime, setRemainingTime] = useState(null);
+  const [isResigning, setIsResigning] = useState(false);
   
   // ✅ CENTRALIZED GAME OVER STATE
   const [gameOverModal, setGameOverModal] = useState({
@@ -445,32 +446,10 @@ const Game = () => {
         setTimeoutWarning(null);
         setRemainingTime(null);
 
+        const winner = 'You';
         // ============================================
-        // DETERMINE WHO WON FROM CURRENT USER'S PERSPECTIVE
+        // SHOW GAME OVER MODAL IMMEDIATELY
         // ============================================
-    
-        let winner;
-        
-        // if (data.resignedPlayer === myColor) {
-        //   // I resigned (this shouldn't normally happen since I'd see my own modal)
-        //   winner = data.winnerUsername;
-        // } else {
-        //   // Opponent resigned - I WIN!
-        //   winner = 'You';
-        // }
-        // if (data.resignedPlayer !== myColor) {
-        //   setResignedPlayerName(data.resignedUsername);
-        //   setShowResignationToast(true);
-          
-        //   // Wait for toast animation, then show modal
-        //   setTimeout(() => {
-        //     setShowResignationToast(false);
-        //     showGameOverModal('You', `${data.resignedUsername} resigned. You win!`);
-        //   }, 2500);
-        // }
-        // // ============================================
-        // // SHOW GAME OVER MODAL IMMEDIATELY
-        // // ============================================
         showGameOverModal(
           winner,
           `${data.resignedUsername} resigned. ${winner === 'You' ? 'You win!' : `${data.winnerUsername} wins!`}`
@@ -717,40 +696,63 @@ const Game = () => {
   // ============================================
   const handleResign = async () => {
     if (!window.confirm('Are you sure you want to resign?')) return;
+
+    setIsResigning(true);
     
     try {
       console.log('📤 Sending resign request...');
-      // 🆕 Get socket ID to send with request 
+      
       const socket = socketService.getSocket();
       const socketId = socket?.id || null;
-      
-      console.log('🔌 Socket ID:', socketId);
       
       const response = await gameAPI.resignGame(gameId, socketId);
       console.log('✅ Resign response:', response.data);
       
-      // Update local game state first
+      // Update local game state
       const updatedGame = response.data.game;
       setGame(updatedGame);
       
-      // Determine opponent's name
-      let opponentName;
-      if (game.isBot) {
-        opponentName = 'Stockfish';
+      // ============================================
+      // 🆕 SAFE WINNER DETERMINATION
+      // ============================================
+      let winnerName = 'Opponent'; // Safe fallback
+      
+      if (updatedGame.isBot) {
+        winnerName = 'Stockfish';
       } else {
         const myColor = getPlayerColor();
-        opponentName = myColor === 'white' 
-          ? game.players.black?.username 
-          : game.players.white?.username;
+        
+        // ✅ Safely extract opponent's username with fallback
+        const opponentPlayer = myColor === 'white' 
+          ? updatedGame.players?.black 
+          : updatedGame.players?.white;
+        
+        winnerName = opponentPlayer?.username || 'Your Opponent';
+        
+        // 🐛 Debug log to catch undefined cases
+        if (!opponentPlayer?.username) {
+          console.warn('⚠️ Opponent username not found:', {
+            myColor,
+            players: updatedGame.players,
+            opponentPlayer
+          });
+        }
       }
       
-      // ✅ SHOW MODAL - Removed setTimeout, let showGameOverModal handle timing
-      console.log('🏳️ Showing resignation modal...');
-      showGameOverModal(opponentName, 'You resigned from the game.');
+      console.log('🏆 Winner:', winnerName);
+      
+      // ✅ Show modal with correct winner
+      showGameOverModal(
+        winnerName,
+        'You resigned from the game.'
+      );
       
     } catch (error) {
       console.error('❌ Error resigning:', error);
-      setError('Failed to resign. Please try again.');
+      setError(error.response?.data?.message || 'Failed to resign. Please try again.');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setIsResigning(false);
     }
   };
 
