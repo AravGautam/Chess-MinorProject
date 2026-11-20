@@ -1,0 +1,5 @@
+User-agent: *
+
+Allow: /
+ 
+Sitemap: https://minorproject-chessmaster.vercel.app/sitemap.xml
